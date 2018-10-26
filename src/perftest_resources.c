@@ -60,6 +60,24 @@ struct check_alive_data check_alive_data;
 static CUdevice cuDevice;
 static CUcontext cuContext;
 
+static int pp_free_gpu_buf(struct pingpong_context *ctx)
+{
+	int rc = 0;
+	void *ptr = ctx->buf[0];
+	CUdeviceptr d_ptr = (CUdeviceptr)ptr;
+
+	printf("freeing CUDA memory buffer\n");
+        CUCHECK(cuMemFree(d_ptr));
+	ctx->buf[0] = 0;
+err:
+	return rc;
+}
+
+void force_invalidation(struct pingpong_context *ctx)
+{
+	pp_free_gpu_buf(ctx);
+}
+
 static int pp_init_gpu(struct pingpong_context *ctx, int cuda_device_id)
 {
 	int cuda_pci_bus_id;
@@ -124,11 +142,22 @@ static int pp_init_gpu(struct pingpong_context *ctx, int cuda_device_id)
 	return 0;
 }
 
-static void pp_free_gpu(struct pingpong_context *ctx)
+static int pp_free_gpu(struct pingpong_context *ctx)
 {
-	printf("destroying current CUDA Ctx\n");
-	CUCHECK(cuCtxDestroy(cuContext));
+	int rc = 0;
+	if (ctx->buf[0]) {
+		rc = pp_free_gpu_buf(ctx);
+		// pass rc down
+        }
+	if (ctx->gpu_context) {
+		printf("destroying current CUDA Ctx\n");
+		CUCHECK(cuCtxDestroy(ctx->gpu_context));
+		ctx->gpu_context = 0;
+	}
+
+	return rc;
 }
+
 #endif
 
 #ifdef HAVE_ROCM

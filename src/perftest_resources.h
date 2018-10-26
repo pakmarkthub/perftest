@@ -880,4 +880,6 @@ int rdma_cm_destroy_cma(struct pingpong_context *ctx,
 */
 int error_handler(char *error_message);
 
+void force_invalidation(struct pingpong_context *ctx);
+
 #endif /* PERFTEST_RESOURCES_H */
