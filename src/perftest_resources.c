@@ -149,10 +149,10 @@ static int pp_free_gpu(struct pingpong_context *ctx)
 		rc = pp_free_gpu_buf(ctx);
 		// pass rc down
         }
-	if (ctx->gpu_context) {
+	if (cuContext) {
 		printf("destroying current CUDA Ctx\n");
-		CUCHECK(cuCtxDestroy(ctx->gpu_context));
-		ctx->gpu_context = 0;
+		CUCHECK(cuCtxDestroy(cuContext));
+		cuContext = 0;
 	}
 
 	return rc;

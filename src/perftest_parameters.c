@@ -527,9 +527,10 @@ static void usage(const char *argv0, VerbType verb, TestType tst, int connection
 		#ifdef HAVE_CUDA
 		printf("      --use_cuda=<cuda device id>");
 		printf(" Use CUDA specific device for GPUDirect RDMA testing\n");
-
 		printf("      --use_cuda_bus_id=<cuda full BUS id>");
 		printf(" Use CUDA specific device, based on its full PCIe address, for GPUDirect RDMA testing\n");
+		printf("      --cuda_force_invalidation=<I> ");
+		printf(" Trigger a memory registration invalidation at iteration I when --all is used, should be less than 23.\n");
 		#endif
 
 		#ifdef HAVE_ROCM
@@ -739,6 +740,7 @@ static void init_perftest_params(struct perftest_parameters *user_param)
 #ifdef HAVE_CUDA
 	user_param->use_cuda		= 0;
 	user_param->cuda_device_id		= 0;
+	user_param->cuda_force_invalidation = INT_MAX;
 #endif
 #ifdef HAVE_ROCM
 	user_param->use_rocm		= 0;
@@ -2003,6 +2005,7 @@ int parser(struct perftest_parameters *user_param,char *argv[], int argc)
 #ifdef HAVE_CUDA
 	static int use_cuda_flag = 0;
 	static int use_cuda_bus_id_flag = 0;
+	static int cuda_force_invalidation = 0;
 #endif
 #ifdef HAVE_ROCM
 	static int use_rocm_flag = 0;
@@ -2140,6 +2143,7 @@ int parser(struct perftest_parameters *user_param,char *argv[], int argc)
 			#ifdef HAVE_CUDA
 			{ .name = "use_cuda",		.has_arg = 1, .flag = &use_cuda_flag, .val = 1},
 			{ .name = "use_cuda_bus_id",	.has_arg = 1, .flag = &use_cuda_bus_id_flag, .val = 1},
+			{ .name = "cuda_force_invalidation", .has_arg = required_argument, .flag = &cuda_force_invalidation, .val = 1},
 			#endif
 			#ifdef HAVE_ROCM
 			{ .name = "use_rocm",		.has_arg = 1, .flag = &use_rocm_flag, .val = 1},
@@ -2529,6 +2533,14 @@ int parser(struct perftest_parameters *user_param,char *argv[], int argc)
 					user_param->cuda_device_bus_id = strdup(optarg);
 					printf("Got PCIe address of: %s\n", user_param->cuda_device_bus_id);
 					use_cuda_bus_id_flag = 0;
+				}
+				if (cuda_force_invalidation) {
+					user_param->cuda_force_invalidation = strtol(optarg,NULL,0);
+					if (user_param->cuda_force_invalidation < 0) {
+						fprintf(stderr, " invalid CUDA force invalidation iteration %d\n", user_param->cuda_force_invalidation);
+						return FAILURE;
+					}
+					cuda_force_invalidation = 0;
 				}
 #endif
 #ifdef HAVE_ROCM
