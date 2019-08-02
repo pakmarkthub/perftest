@@ -37,7 +37,7 @@ noinst_LIBRARIES = libperftest.a
 libperftest_a_SOURCES = src/get_clock.c src/perftest_communication.c src/perftest_parameters.c src/perftest_resources.c
 noinst_HEADERS = src/get_clock.h src/perftest_communication.h src/perftest_parameters.h src/perftest_resources.h
 
-bin_PROGRAMS = ib_send_bw ib_send_lat ib_write_lat ib_write_bw ib_read_lat ib_read_bw ib_atomic_lat ib_atomic_bw
+bin_PROGRAMS = ib_send_bw ib_send_lat ib_write_lat ib_write_lat_ping ib_write_bw ib_read_lat ib_read_bw ib_atomic_lat ib_atomic_bw
 bin_SCRIPTS = run_perftest_loopback run_perftest_multi_devices
 
 if HAVE_RAW_ETH
@@ -66,6 +66,9 @@ ib_send_lat_LDADD = libperftest.a $(LIBUMAD) $(LIBMATH) $(LIBMLX4) $(LIBMLX5)
 
 ib_write_lat_SOURCES = src/write_lat.c
 ib_write_lat_LDADD = libperftest.a $(LIBMATH)  $(LIBMLX4) $(LIBMLX5)
+
+ib_write_lat_ping_SOURCES = src/write_lat_ping.c
+ib_write_lat_ping_LDADD = libperftest.a $(LIBMATH)  $(LIBMLX4) $(LIBMLX5)
 
 ib_write_bw_SOURCES = src/write_bw.c
 ib_write_bw_LDADD = libperftest.a $(LIBMATH) $(LIBMLX4) $(LIBMLX5)
