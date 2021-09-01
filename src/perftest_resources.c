@@ -60,22 +60,21 @@ struct check_alive_data check_alive_data;
 static CUdevice cuDevice;
 static CUcontext cuContext;
 
-static int pp_free_gpu_buf(struct pingpong_context *ctx)
+void force_invalidation(struct pingpong_context *ctx, struct perftest_parameters *user_param)
 {
-	int rc = 0;
-	void *ptr = ctx->buf[0];
-	CUdeviceptr d_ptr = (CUdeviceptr)ptr;
+#if 0
+	int dereg_counter = (user_param->mr_per_qp) ? user_param->num_of_qps : 1;
+	for (int i = 0; i < dereg_counter; i++) {
+		CUdeviceptr d_A = (CUdeviceptr)ctx->buf[i];
 
-	printf("freeing CUDA memory buffer\n");
-        CUCHECK(cuMemFree(d_ptr));
-	ctx->buf[0] = 0;
-err:
-	return rc;
-}
-
-void force_invalidation(struct pingpong_context *ctx)
-{
-	pp_free_gpu_buf(ctx);
+		printf("deallocating RX GPU buffer %016llx\n", d_A);
+		CUCHECK(cuMemFree(d_A));
+	}
+#else
+	printf("destroying current CUDA Ctx\n");
+	CUCHECK(cuCtxDestroy(cuContext));
+	cuContext = 0;
+#endif
 }
 
 static int pp_init_gpu(struct pingpong_context *ctx, int cuda_device_id)
@@ -142,20 +141,13 @@ static int pp_init_gpu(struct pingpong_context *ctx, int cuda_device_id)
 	return 0;
 }
 
-static int pp_free_gpu(struct pingpong_context *ctx)
+static void pp_free_gpu(struct pingpong_context *ctx)
 {
-	int rc = 0;
-	if (ctx->buf[0]) {
-		rc = pp_free_gpu_buf(ctx);
-		// pass rc down
-        }
 	if (cuContext) {
 		printf("destroying current CUDA Ctx\n");
 		CUCHECK(cuCtxDestroy(cuContext));
 		cuContext = 0;
 	}
-
-	return rc;
 }
 
 #endif
@@ -1343,8 +1335,8 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 
 		ctx->is_contig_supported = FAILURE;
 
-		printf("cuMemAlloc() of a %zd bytes GPU buffer\n",
-		       ctx->buff_size);
+		printf("cuMemAlloc() of a %zd bytes GPU buffer for qp_index=%d\n",
+		       ctx->buff_size, qp_index);
 		error = cuMemAlloc(&d_A, size);
 		if (error != CUDA_SUCCESS) {
 			printf("cuMemAlloc error=%d\n", error);

@@ -298,7 +298,7 @@ int main(int argc, char *argv[])
 			#ifdef HAVE_CUDA
 			if (i >= user_param.cuda_force_invalidation) {
 			    fprintf(stderr," Injecting an memory registration invalidation\n");
-			    force_invalidation(&ctx);
+			    force_invalidation(&ctx, &user_param);
 			}
 			#endif
 			if (user_param.duplex && (atof(user_param.version) >= 4.6)) {
