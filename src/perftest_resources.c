@@ -1759,6 +1759,36 @@ static int verify_ooo_settings(struct pingpong_context *ctx,
 	}
 }
 #endif
+
+#ifdef HAVE_CUDA
+int cuda_init(struct perftest_parameters *user_param)
+{
+    if (user_param->cuda_device_bus_id) {
+        int err;
+
+        printf("initializing CUDA\n");
+        CUresult error = cuInit(0);
+        if (error != CUDA_SUCCESS) {
+            printf("cuInit(0) returned %d\n", error);
+            exit(1);
+        }
+
+        printf("Finding PCIe BUS %s\n", user_param->cuda_device_bus_id);
+        err = cuDeviceGetByPCIBusId (&user_param->cuda_device_id, user_param->cuda_device_bus_id);
+        if (err != 0) {
+            fprintf(stderr, "We have an error from cuDeviceGetByPCIBusId: %d\n", err);
+        }
+        printf("Picking GPU number %d\n", user_param->cuda_device_id);
+    }
+    if (pp_init_gpu(user_param->cuda_device_id)) {
+        fprintf(stderr, "Couldn't init GPU context\n");
+        return FAILURE;
+    }
+
+    return 0;
+}
+#endif
+
 int ctx_init(struct pingpong_context *ctx, struct perftest_parameters *user_param)
 {
 	int i;
@@ -2227,7 +2257,8 @@ int ctx_modify_qp_to_init(struct ibv_qp *qp,struct perftest_parameters *user_par
 			case ATOMIC: attr.qp_access_flags = IBV_ACCESS_REMOTE_ATOMIC; break;
 			case READ  : attr.qp_access_flags = IBV_ACCESS_REMOTE_READ;  break;
 			case WRITE : attr.qp_access_flags = IBV_ACCESS_REMOTE_WRITE; break;
-			case SEND  : attr.qp_access_flags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_LOCAL_WRITE;
+			case SEND  : attr.qp_access_flags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_LOCAL_WRITE; break;
+            case GVERBS: break;
 		}
 		flags |= IBV_QP_ACCESS_FLAGS;
 		if (user_param->verify) {

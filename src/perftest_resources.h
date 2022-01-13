@@ -338,6 +338,10 @@ int verify_params_with_device_context(struct ibv_context *ctx,
 				      struct perftest_parameters *user_param);
 
 
+#ifdef HAVE_CUDA
+int cuda_init(struct perftest_parameters *user_param);
+#endif
+
 /* ctx_init
  *
  * Description :
