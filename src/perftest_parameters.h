@@ -261,10 +261,10 @@ t_stdev: %.2f,\npercentile_99: %.2f,\npercentile_99.9: %.2f,\n"
 #define GET_ARRAY_SIZE(arr) (sizeof((arr)) / sizeof((arr[0])))
 
 /* The Verb of the benchmark. */
-typedef enum { SEND , WRITE, READ, ATOMIC, GVERBS } VerbType;
+typedef enum { SEND , WRITE, READ, ATOMIC } VerbType;
 
 /* The type of the test */
-typedef enum { LAT, BW, LAT_BY_BW, FS_RATE, SANITY } TestType;
+typedef enum { LAT , BW , LAT_BY_BW, FS_RATE } TestType;
 
 /* The type of the machine ( server or client actually). */
 typedef enum { SERVER , CLIENT , UNCHOSEN} MachineType;

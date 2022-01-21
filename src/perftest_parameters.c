@@ -213,7 +213,7 @@ static void usage(const char *argv0, VerbType verb, TestType tst, int connection
 	printf("\n");
 	printf("Options:\n");
 
-	if (verb != ATOMIC && connection_type != RawEth && tst != SANITY) {
+	if (verb != ATOMIC && connection_type != RawEth) {
 		printf("  -a, --all ");
 		printf(" Run sizes from 2 till 2^23\n");
 	}
@@ -228,7 +228,7 @@ static void usage(const char *argv0, VerbType verb, TestType tst, int connection
 		printf(" Measure bidirectional bandwidth (default unidirectional)\n");
 	}
 
-	if (connection_type != RawEth && tst != SANITY) {
+	if (connection_type != RawEth) {
 		if (verb == SEND) {
 			printf("  -c, --connection=<RC/XRC/UC/UD/DC/SRD> ");
 			printf(" Connection type RC/XRC/UC/UD/DC/SRD (default RC)\n");
@@ -254,12 +254,10 @@ static void usage(const char *argv0, VerbType verb, TestType tst, int connection
 	printf("  -d, --ib-dev=<dev> ");
 	printf(" Use IB device <dev> (default first device found)\n");
 
-    if (tst != SANITY) {
-        printf("  -D, --duration ");
-        printf(" Run test for a customized period of seconds.\n");
-    }
+	printf("  -D, --duration ");
+	printf(" Run test for a customized period of seconds.\n");
 
-	if (verb != WRITE && connection_type != RawEth && tst != SANITY) {
+	if (verb != WRITE && connection_type != RawEth) {
 		printf("  -e, --events ");
 		printf(" Sleep on CQ events (default poll)\n");
 
@@ -267,13 +265,11 @@ static void usage(const char *argv0, VerbType verb, TestType tst, int connection
 		printf(" Set <completion vector> used for events\n");
 	}
 
-    if (tst != SANITY) {
-        printf("  -f, --margin ");
-        printf(" measure results within margins. (default=2sec)\n");
+	printf("  -f, --margin ");
+	printf(" measure results within margins. (default=2sec)\n");
 
-        printf("  -F, --CPU-freq ");
-        printf(" Do not show a warning even if cpufreq_ondemand module is loaded, and cpu-freq is not on max.\n");
-    }
+	printf("  -F, --CPU-freq ");
+	printf(" Do not show a warning even if cpufreq_ondemand module is loaded, and cpu-freq is not on max.\n");
 
 	if (verb == SEND && tst != FS_RATE) {
 		printf("  -g, --mcg ");
@@ -291,7 +287,7 @@ static void usage(const char *argv0, VerbType verb, TestType tst, int connection
 	printf("  -i, --ib-port=<port> ");
 	printf(" Use port <port> of IB device (default %d)\n",DEF_IB_PORT);
 
-	if (verb != READ && verb != ATOMIC && tst != SANITY) {
+	if (verb != READ && verb != ATOMIC) {
 		printf("  -I, --inline_size=<size> ");
 		printf(" Max size of message to be sent in inline\n");
 	}
@@ -303,7 +299,7 @@ static void usage(const char *argv0, VerbType verb, TestType tst, int connection
 		printf(" Post list of receive WQEs of <list size> size (instead of single post)\n");
 	}
 
-	if (tst != FS_RATE && tst != SANITY) {
+	if (tst != FS_RATE) {
 		printf("  -L, --hop_limit=<hop_limit> ");
 		printf(" Set hop limit value (ttl for IPv4 RawEth QP). Values 0-255 (default %d)\n", DEF_HOP_LIMIT);
 
@@ -321,10 +317,8 @@ static void usage(const char *argv0, VerbType verb, TestType tst, int connection
 		}
 	}
 
-    if (tst != SANITY) {
-        printf("  -n, --iters=<iters> ");
-        printf(" Number of exchanges (at least %d, default %d)\n", MIN_ITER, ((verb == WRITE) && (tst == BW)) ? DEF_ITERS_WB : DEF_ITERS);
-    }
+	printf("  -n, --iters=<iters> ");
+	printf(" Number of exchanges (at least %d, default %d)\n", MIN_ITER, ((verb == WRITE) && (tst == BW)) ? DEF_ITERS_WB : DEF_ITERS);
 
 	if (tst == BW) {
 		printf("  -N, --noPeak");
@@ -341,12 +335,10 @@ static void usage(const char *argv0, VerbType verb, TestType tst, int connection
 		printf(" Run test in dual-port mode.\n");
 	}
 
-    if (tst != SANITY) {
-        printf("  -p, --port=<port> ");
-        printf(" Listen on/connect to port <port> (default %d)\n",DEF_PORT);
-    }
+	printf("  -p, --port=<port> ");
+	printf(" Listen on/connect to port <port> (default %d)\n",DEF_PORT);
 
-	if (tst == BW) {
+	if (tst == BW ) {
 		printf("  -q, --qp=<num of qp's>  Num of qp's(default %d)\n", DEF_NUM_QPS);
 	}
 
@@ -361,17 +353,17 @@ static void usage(const char *argv0, VerbType verb, TestType tst, int connection
 		printf(" If using srq, rx-depth controls max-wr size of the srq\n");
 	}
 
-	if (connection_type != RawEth && tst != SANITY) {
+	if (connection_type != RawEth) {
 		printf("  -R, --rdma_cm ");
 		printf(" Connect QPs with rdma_cm and run test on those QPs\n");
 	}
 
-	if (verb != ATOMIC && tst != SANITY) {
+	if (verb != ATOMIC) {
 		printf("  -s, --size=<size> ");
 		printf(" Size of message to exchange (default %d)\n", tst == LAT ? DEF_SIZE_LAT : DEF_SIZE_BW);
 	}
 
-	if (tst != FS_RATE && tst != SANITY) {
+	if (tst != FS_RATE) {
 		printf("  -S, --sl=<sl> ");
 		printf(" SL (default %d)\n",DEF_SL);
 
@@ -384,10 +376,8 @@ static void usage(const char *argv0, VerbType verb, TestType tst, int connection
 		printf(" Set <tos_value> to RDMA-CM QPs. available only with -R flag. values 0-256 (default off)\n");
 	}
 
-    if (tst != SANITY) {
-        printf("  -u, --qp-timeout=<timeout> ");
-        printf(" QP timeout, timeout value is 4 usec * 2 ^(timeout), default %d\n",DEF_QP_TIME);
-    }
+	printf("  -u, --qp-timeout=<timeout> ");
+	printf(" QP timeout, timeout value is 4 usec * 2 ^(timeout), default %d\n",DEF_QP_TIME);
 
 	if (tst == LAT || tst == LAT_BY_BW || tst == FS_RATE) {
 		printf("  -U, --report-unsorted ");
@@ -402,12 +392,10 @@ static void usage(const char *argv0, VerbType verb, TestType tst, int connection
 		printf(" Set verifier limit for bandwidth\n");
 	}
 
-    if (tst != SANITY) {
-        printf("  -W, --report-counters=<list of counter names> ");
-        printf(" Report performance counter change (example: \"counters/port_xmit_data,hw_counters/out_of_buffer\")\n");
-    }
+	printf("  -W, --report-counters=<list of counter names> ");
+	printf(" Report performance counter change (example: \"counters/port_xmit_data,hw_counters/out_of_buffer\")\n");
 
-	if (connection_type != RawEth && tst != SANITY) {
+	if (connection_type != RawEth) {
 		printf("  -x, --gid-index=<index> ");
 		printf(" Test uses GID with GID index (Default : IB - no gid . ETH - 0)\n");
 	}
@@ -417,7 +405,7 @@ static void usage(const char *argv0, VerbType verb, TestType tst, int connection
 		printf(" Set verifier limit for Msg Rate\n");
 	}
 
-	if (connection_type != RawEth && tst != SANITY) {
+	if (connection_type != RawEth) {
 		printf("  -z, --com_rdma_cm ");
 		printf(" Communicate with rdma_cm module to exchange data - use regular QPs\n");
 	}
@@ -1589,18 +1577,12 @@ static void force_dependecies(struct perftest_parameters *user_param)
 
 	#ifdef HAVE_CUDA
 	if (user_param->use_cuda) {
-		if (user_param->tst != BW && user_param->tst != LAT && user_param->verb != GVERBS) {
+		if (user_param->tst != BW && user_param->tst != LAT) {
 			printf(RESULT_LINE);
-			fprintf(stderr," Perftest supports CUDA only in BW, latency, and GVERBS tests\n");
+			fprintf(stderr," Perftest supports CUDA only in BW and latency tests\n");
 			exit(1);
 		}
 	}
-
-    if (user_param->verb == GVERBS && !user_param->use_cuda) {
-        printf(RESULT_LINE);
-        fprintf(stderr," GVERBS test requires CUDA\n");
-        exit(1);
-    }
 
 	if (user_param->use_cuda && user_param->mmap_file != NULL) {
 		printf(RESULT_LINE);
