@@ -40,6 +40,7 @@ AC_SUBST(MAJOR_VERSION)
 AC_SUBST(MINOR_VERSION)
 
 AC_ARG_VAR(CUDA_H_PATH, help-string)
+AC_ARG_VAR(NVML_H_PATH, help-string)
 AC_ARG_VAR(RANLIB, ranlib tool)
 
 AC_ARG_ENABLE([ibv_wr_api],
@@ -257,6 +258,15 @@ else
 	HAVE_CUDA=no
 fi
 AM_CONDITIONAL([HAVE_CUDA], [test "x$HAVE_CUDA" = "xyes"])
+
+AM_CONDITIONAL([HAVE_NVML],true)
+if [test "$NVML_H_PATH" ]; then
+	AC_DEFINE([HAVE_NVML], [1], [Enable NVML feature])
+	AC_DEFINE_UNQUOTED([NVML_PATH], "$NVML_H_PATH" , [Enable NVML feature])
+	LIBS=$LIBS" -lnvidia-ml"
+else
+	AM_CONDITIONAL([HAVE_NVML],false)
+fi
 
 AC_TRY_LINK([#include <infiniband/verbs.h>],
 	[struct ibv_qp_attr *attr; int x = attr->rate_limit;],[HAVE_PACKET_PACING=yes], [HAVE_PACKET_PACING=no])

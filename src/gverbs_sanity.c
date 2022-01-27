@@ -1,12 +1,12 @@
 #include <stdio.h>
 #include <infiniband/verbs.h>
 #include <infiniband/mlx5dv.h>
-#include <cuda.h>
-#include <nvml.h>
 
 #include "mlx5_ifc.h"
 #include "perftest_parameters.h"
 #include "perftest_resources.h"
+
+#include NVML_PATH
 
 #define WAIVED 2
 

@@ -95,8 +95,10 @@ ib_atomic_bw_SOURCES = src/atomic_bw.c
 ib_atomic_bw_LDADD = libperftest.a $(LIBMATH) $(LIBMLX4) $(LIBMLX5) $(LIBEFA)
 
 if HAVE_CUDA
+if HAVE_NVML
 gverbs_sanity_SOURCES = src/gverbs_sanity.c
-gverbs_sanity_LDADD = libperftest.a $(LIBMATH) $(LIBMLX4) $(LIBMLX5) $(LIBEFA) -lnvidia-ml
+gverbs_sanity_LDADD = libperftest.a $(LIBMATH) $(LIBMLX4) $(LIBMLX5) $(LIBEFA)
+endif
 endif
 
 if HAVE_RAW_ETH
