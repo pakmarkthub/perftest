@@ -50,10 +50,6 @@ noinst_HEADERS +=
 bin_PROGRAMS +=
 endif
 
-if HAVE_CUDA
-bin_PROGRAMS += gverbs_sanity
-endif
-
 if IS_FREEBSD
 LIBMLX4= -lmlx4
 else
@@ -96,6 +92,7 @@ ib_atomic_bw_LDADD = libperftest.a $(LIBMATH) $(LIBMLX4) $(LIBMLX5) $(LIBEFA)
 
 if HAVE_CUDA
 if HAVE_NVML
+bin_PROGRAMS += gverbs_sanity
 gverbs_sanity_SOURCES = src/gverbs_sanity.c
 gverbs_sanity_LDADD = libperftest.a $(LIBMATH) $(LIBMLX4) $(LIBMLX5) $(LIBEFA)
 endif
