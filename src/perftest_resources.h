@@ -176,6 +176,7 @@ struct pingpong_context {
 	#ifdef HAVE_CUDA
 	int						*ver_val;
 	#endif
+	int					*buf_dmabuf_fd;
 	struct ibv_ah				**ah;
 	struct ibv_qp				**qp;
 	#ifdef HAVE_IBV_WR_API

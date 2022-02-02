@@ -936,6 +936,7 @@ void alloc_ctx(struct pingpong_context *ctx,struct perftest_parameters *user_par
 	#endif
 	ALLOCATE(ctx->mr, struct ibv_mr*, user_param->num_of_qps);
 	ALLOCATE(ctx->buf, void* , user_param->num_of_qps);
+	ALLOCATE(ctx->buf_dmabuf_fd, int , user_param->num_of_qps);
 
 	if ((user_param->tst == BW || user_param->tst == LAT_BY_BW) && (user_param->machine == CLIENT || user_param->duplex)) {
 
@@ -1400,7 +1401,6 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 		printf("allocated GPU buffer address at %016llx pointer=%p\n",
 		       d_A, (void *)d_A);
 		ctx->buf[qp_index] = (void *)d_A;
-
 		if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
 			printf("cuMemAlloc() of a %zd bytes GPU buffer\n",
 			       ctx->buff_size);
@@ -1421,6 +1421,10 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 			return FAILURE;
 		}
 		ctx->buf_key = (void *)d_A;
+		if (user_param->use_cuda_dmabuf) {
+			// TODO: Convert d_A to dmabuf fd and put it in ctx->buf_dmabuf_fd[qp_index]
+			printf("using DMA-BUF for GPU buffer\n");
+		}
 	} else
 	#endif
 
@@ -1515,7 +1519,19 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 #endif
 
 	/* Allocating Memory region and assigning our buffer to it. */
-	ctx->mr[qp_index] = ibv_reg_mr(ctx->pd, ctx->buf[qp_index], ctx->buff_size, flags);
+#ifdef HAVE_CUDA
+	if (user_param->use_cuda && user_param->use_cuda_dmabuf) {
+		ctx->mr[qp_index] = ibv_reg_dmabuf_mr(
+			ctx->pd, 0, ctx->buff_size, (uint64_t)ctx->buf[qp_index], 
+			ctx->buf_dmabuf_fd[qp_index], flags
+		);
+	}
+	else
+#endif
+	{
+		ctx->mr[qp_index] = ibv_reg_mr(ctx->pd, ctx->buf[qp_index], ctx->buff_size, flags);
+	}
+
 	if (!ctx->mr[qp_index]) {
 		fprintf(stderr, "Couldn't allocate MR\n");
 		return FAILURE;
