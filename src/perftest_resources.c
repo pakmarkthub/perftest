@@ -56,6 +56,10 @@ struct check_alive_data check_alive_data;
 	ASSERT(CUDA_SUCCESS == result);		\
 } while (0)
 
+#define CU_INIT_UUID_STATIC
+
+#include <cuda_etbl/memutils.h>
+
 /*----------------------------------------------------------------------------*/
 
 static CUdevice cuDevice;
@@ -935,8 +939,9 @@ void alloc_ctx(struct pingpong_context *ctx,struct perftest_parameters *user_par
 	#endif
 	#endif
 	ALLOCATE(ctx->mr, struct ibv_mr*, user_param->num_of_qps);
-	ALLOCATE(ctx->buf, void* , user_param->num_of_qps);
-	ALLOCATE(ctx->buf_dmabuf_fd, int , user_param->num_of_qps);
+	ALLOCATE(ctx->buf, void*, user_param->num_of_qps);
+	ALLOCATE(ctx->buf_dmabuf_fd, int, user_param->num_of_qps);
+	ALLOCATE(ctx->buf_dmabuf_offset, uint64_t, user_param->num_of_qps);
 
 	if ((user_param->tst == BW || user_param->tst == LAT_BY_BW) && (user_param->machine == CLIENT || user_param->duplex)) {
 
@@ -1169,6 +1174,9 @@ int destroy_ctx(struct pingpong_context *ctx,
 		for (i = 0; i < dereg_counter; i++) {
 			CUdeviceptr d_A = (CUdeviceptr)ctx->buf[i];
 
+			if (user_param->use_cuda_dmabuf)
+				close(ctx->buf_dmabuf_fd[i]);
+
 			printf("deallocating RX GPU buffer %016llx\n", d_A);
 			cuMemFree(d_A);
 			if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
@@ -1384,7 +1392,7 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 	if (user_param->use_cuda) {
 		CUdeviceptr d_A;
 		int error;
-		const size_t gpu_page_size = 64 * 1024;
+		const size_t gpu_page_size = 2 * 1024 * 1024;
 		size_t size = (ctx->buff_size + gpu_page_size - 1) &
 			~(gpu_page_size - 1);
 
@@ -1400,6 +1408,7 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 
 		printf("allocated GPU buffer address at %016llx pointer=%p\n",
 		       d_A, (void *)d_A);
+
 		ctx->buf[qp_index] = (void *)d_A;
 		if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
 			printf("cuMemAlloc() of a %zd bytes GPU buffer\n",
@@ -1422,8 +1431,32 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 		}
 		ctx->buf_key = (void *)d_A;
 		if (user_param->use_cuda_dmabuf) {
-			// TODO: Convert d_A to dmabuf fd and put it in ctx->buf_dmabuf_fd[qp_index]
+			CUdeviceptr aligned_ptr;
+			const size_t host_page_size = sysconf(_SC_PAGESIZE);
+			int dmabuf_fd;
+			uint64_t offset;
+			const CUetblMemutils *pMemutils;
+
 			printf("using DMA-BUF for GPU buffer\n");
+
+			error = cuGetExportTable((const void **)&pMemutils, &CU_ETID_Memutils);
+			if (error != CUDA_SUCCESS) {
+				printf("cuGetExportTable error=%d\n", error);
+				return FAILURE;
+			}
+
+			// Round down to host page size
+			aligned_ptr = d_A & ~(host_page_size - 1);
+			offset = d_A - aligned_ptr;
+
+			error = pMemutils->MemGetHandleForAddressRange((void *)&dmabuf_fd, aligned_ptr, size, CU_MEM_ADDRESS_RANGE_HANDLE_TYPE_DMABUF_FILE_DESCRIPTOR, 0);
+			if (error != CUDA_SUCCESS) {
+				printf("MemGetHandleForAddressRange error=%d\n", error);
+				return FAILURE;
+			}
+
+			ctx->buf_dmabuf_fd[qp_index] = dmabuf_fd;
+			ctx->buf_dmabuf_offset[qp_index] = offset;
 		}
 	} else
 	#endif
@@ -1522,7 +1555,7 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 #ifdef HAVE_CUDA
 	if (user_param->use_cuda && user_param->use_cuda_dmabuf) {
 		ctx->mr[qp_index] = ibv_reg_dmabuf_mr(
-			ctx->pd, 0, ctx->buff_size, (uint64_t)ctx->buf[qp_index], 
+			ctx->pd, ctx->buf_dmabuf_offset[qp_index], ctx->buff_size, (uint64_t)ctx->buf[qp_index], 
 			ctx->buf_dmabuf_fd[qp_index], flags
 		);
 	}

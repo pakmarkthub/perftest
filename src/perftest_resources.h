@@ -177,6 +177,7 @@ struct pingpong_context {
 	int						*ver_val;
 	#endif
 	int					*buf_dmabuf_fd;
+	uint64_t				*buf_dmabuf_offset;
 	struct ibv_ah				**ah;
 	struct ibv_qp				**qp;
 	#ifdef HAVE_IBV_WR_API
