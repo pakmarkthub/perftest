@@ -1445,6 +1445,11 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 				return FAILURE;
 			}
 
+			if (pMemutils->struct_size < offsetof(CUetblMemutils, MemGetHandleForAddressRange) + sizeof(pMemutils->MemGetHandleForAddressRange)) {
+				printf("CUDA does not support DMA-BUF\n");
+				return FAILURE;
+			}
+
 			// Round down to host page size
 			aligned_ptr = d_A & ~(host_page_size - 1);
 			offset = d_A - aligned_ptr;
@@ -1583,16 +1588,22 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 			ctx->pd, ctx->buf_dmabuf_offset[qp_index], ctx->buff_size, (uint64_t)ctx->buf[qp_index], 
 			ctx->buf_dmabuf_fd[qp_index], flags
 		);
+		if (!ctx->mr[qp_index]) {
+			int error = errno;
+			fprintf(stderr, "Couldn't allocate MR with error=%d\n", error);
+			if (error == EOPNOTSUPP)
+				fprintf(stderr, "OFED stack does not support DMA-BUF\n");
+			return FAILURE;
+		}
 	}
 	else
 #endif
 	{
 		ctx->mr[qp_index] = ibv_reg_mr(ctx->pd, ctx->buf[qp_index], ctx->buff_size, flags);
-	}
-
-	if (!ctx->mr[qp_index]) {
-		fprintf(stderr, "Couldn't allocate MR\n");
-		return FAILURE;
+		if (!ctx->mr[qp_index]) {
+			fprintf(stderr, "Couldn't allocate MR\n");
+			return FAILURE;
+		}
 	}
 
 	if (ctx->is_contig_supported == SUCCESS)
