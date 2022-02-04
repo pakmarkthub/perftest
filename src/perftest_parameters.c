@@ -487,6 +487,14 @@ static void usage(const char *argv0, VerbType verb, TestType tst, int connection
 	printf("      --use_old_post_send");
 	printf(" Use old post send flow (ibv_post_send).\n");
 
+	printf("      --verify");
+	printf(" Verify the send/recv data.\n");
+
+	if (tst == LAT) {
+		printf("      --trigger_failure");
+		printf(" Trigger failure.\n");
+	}
+
 	if (tst != FS_RATE) {
 		printf("      --perform_warm_up");
 		printf(" Perform some iterations before start measuring in order to warming-up memory cache, valid in Atomic, Read and Write BW tests\n");
