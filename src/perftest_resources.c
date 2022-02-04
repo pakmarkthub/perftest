@@ -1172,7 +1172,7 @@ int destroy_ctx(struct pingpong_context *ctx,
 	if (user_param->use_cuda) {
 		cuMemFree((CUdeviceptr)ctx->ver_val);
 		for (i = 0; i < dereg_counter; i++) {
-			CUdeviceptr d_A = (CUdeviceptr)ctx->buf[i];
+			CUdeviceptr d_A = (CUdeviceptr)ctx->buf[i] - user_param->cuda_buffer_offset;
 
 			if (user_param->use_cuda_dmabuf)
 				close(ctx->buf_dmabuf_fd[i]);
@@ -1390,24 +1390,26 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 
 	#ifdef HAVE_CUDA
 	if (user_param->use_cuda) {
-		CUdeviceptr d_A;
+		CUdeviceptr start_d_A, d_A;
 		int error;
 		const size_t gpu_page_size = 2 * 1024 * 1024;
-		size_t size = (ctx->buff_size + gpu_page_size - 1) &
+		size_t size = (ctx->buff_size + user_param->cuda_buffer_offset + gpu_page_size - 1) &
 			~(gpu_page_size - 1);
 
 		ctx->is_contig_supported = FAILURE;
 
 		printf("cuMemAlloc() of a %zd bytes GPU buffer for qp_index=%d\n",
 		       ctx->buff_size, qp_index);
-		error = cuMemAlloc(&d_A, size);
+		error = cuMemAlloc(&start_d_A, size);
 		if (error != CUDA_SUCCESS) {
 			printf("cuMemAlloc error=%d\n", error);
 			return FAILURE;
 		}
 
-		printf("allocated GPU buffer address at %016llx pointer=%p\n",
-		       d_A, (void *)d_A);
+		d_A = start_d_A + user_param->cuda_buffer_offset;
+
+		printf("allocated GPU data buffer address at %#llx and start using from address at %#llx\n",
+		       start_d_A, d_A);
 
 		ctx->buf[qp_index] = (void *)d_A;
 		if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
@@ -1437,8 +1439,6 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 			uint64_t offset;
 			const CUetblMemutils *pMemutils;
 
-			printf("using DMA-BUF for GPU buffer\n");
-
 			error = cuGetExportTable((const void **)&pMemutils, &CU_ETID_Memutils);
 			if (error != CUDA_SUCCESS) {
 				printf("cuGetExportTable error=%d\n", error);
@@ -1457,7 +1457,29 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 
 			ctx->buf_dmabuf_fd[qp_index] = dmabuf_fd;
 			ctx->buf_dmabuf_offset[qp_index] = offset;
+
+			printf("using DMA-BUF for GPU buffer address at %#llx aligned at %#llx\n", d_A, aligned_ptr);
 		}
+		if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
+			printf("cuMemAlloc() of a %zd bytes GPU buffer\n",
+			       ctx->buff_size);
+			error = cuMemAlloc(&d_A, size);
+			if (error != CUDA_SUCCESS) {
+				printf("cuMemAlloc error=%d\n", error);
+				return FAILURE;
+			}
+
+			printf("allocated GPU verification buffer address at %#llx\n",
+			       d_A);
+			ctx->ver_buf[qp_index] = (void *)d_A;
+		}
+
+		error = cuMemAlloc(&d_A, LAT_VER_KEYLEN);
+		if (error != CUDA_SUCCESS) {
+			printf("cuMemAlloc error=%d\n", error);
+			return FAILURE;
+		}
+		ctx->buf_key = (void *)d_A;
 	} else
 	#endif
 
@@ -1554,6 +1576,9 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 	/* Allocating Memory region and assigning our buffer to it. */
 #ifdef HAVE_CUDA
 	if (user_param->use_cuda && user_param->use_cuda_dmabuf) {
+		printf("Calling ibv_reg_dmabuf_mr(offset=%lu, size=%zu, addr=%p, fd=%d) for QP #%d\n",
+			ctx->buf_dmabuf_offset[qp_index], ctx->buff_size, ctx->buf[qp_index],
+			ctx->buf_dmabuf_fd[qp_index], qp_index);
 		ctx->mr[qp_index] = ibv_reg_dmabuf_mr(
 			ctx->pd, ctx->buf_dmabuf_offset[qp_index], ctx->buff_size, (uint64_t)ctx->buf[qp_index], 
 			ctx->buf_dmabuf_fd[qp_index], flags
