@@ -56,10 +56,6 @@ struct check_alive_data check_alive_data;
 	ASSERT(CUDA_SUCCESS == result);		\
 } while (0)
 
-#define CU_INIT_UUID_STATIC
-
-#include <cuda_etbl/memutils.h>
-
 /*----------------------------------------------------------------------------*/
 
 static CUdevice cuDevice;
@@ -1437,33 +1433,20 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 			const size_t host_page_size = sysconf(_SC_PAGESIZE);
 			int dmabuf_fd;
 			uint64_t offset;
-			const CUetblMemutils *pMemutils;
-
-			error = cuGetExportTable((const void **)&pMemutils, &CU_ETID_Memutils);
-			if (error != CUDA_SUCCESS) {
-				printf("cuGetExportTable error=%d\n", error);
-				return FAILURE;
-			}
-
-			if (pMemutils->struct_size < offsetof(CUetblMemutils, MemGetHandleForAddressRange) + sizeof(pMemutils->MemGetHandleForAddressRange)) {
-				printf("CUDA does not support DMA-BUF\n");
-				return FAILURE;
-			}
 
 			// Round down to host page size
 			aligned_ptr = d_A & ~(host_page_size - 1);
 			offset = d_A - aligned_ptr;
 
-			error = pMemutils->MemGetHandleForAddressRange((void *)&dmabuf_fd, aligned_ptr, size, CU_MEM_ADDRESS_RANGE_HANDLE_TYPE_DMABUF_FILE_DESCRIPTOR, 0);
+			printf("using DMA-BUF for GPU buffer address at %#llx aligned at %#llx with size %zu\n", d_A, aligned_ptr, size);
+			error = cuMemGetHandleForAddressRange((void *)&dmabuf_fd, aligned_ptr, size, CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, 0);
 			if (error != CUDA_SUCCESS) {
-				printf("MemGetHandleForAddressRange error=%d\n", error);
+				printf("cuMemGetHandleForAddressRange error=%d\n", error);
 				return FAILURE;
 			}
 
 			ctx->buf_dmabuf_fd[qp_index] = dmabuf_fd;
 			ctx->buf_dmabuf_offset[qp_index] = offset;
-
-			printf("using DMA-BUF for GPU buffer address at %#llx aligned at %#llx\n", d_A, aligned_ptr);
 		}
 		if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
 			printf("cuMemAlloc() of a %zd bytes GPU buffer\n",
