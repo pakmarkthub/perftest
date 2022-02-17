@@ -1170,8 +1170,10 @@ int destroy_ctx(struct pingpong_context *ctx,
 		for (i = 0; i < dereg_counter; i++) {
 			CUdeviceptr d_A = (CUdeviceptr)ctx->buf[i] - user_param->cuda_buffer_offset;
 
+			#ifdef HAVE_CUDA_DMABUF
 			if (user_param->use_cuda_dmabuf)
 				close(ctx->buf_dmabuf_fd[i]);
+			#endif
 
 			printf("deallocating RX GPU buffer %016llx\n", d_A);
 			cuMemFree(d_A);
@@ -1428,6 +1430,7 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 			return FAILURE;
 		}
 		ctx->buf_key = (void *)d_A;
+		#ifdef HAVE_CUDA_DMABUF
 		if (user_param->use_cuda_dmabuf) {
 			CUdeviceptr aligned_ptr;
 			const size_t host_page_size = sysconf(_SC_PAGESIZE);
@@ -1448,6 +1451,8 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 			ctx->buf_dmabuf_fd[qp_index] = dmabuf_fd;
 			ctx->buf_dmabuf_offset[qp_index] = offset;
 		}
+		#endif
+
 		if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
 			printf("cuMemAlloc() of a %zd bytes GPU buffer\n",
 			       ctx->buff_size);
@@ -1562,7 +1567,7 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 #endif
 
 	/* Allocating Memory region and assigning our buffer to it. */
-#ifdef HAVE_CUDA
+#ifdef HAVE_CUDA_DMABUF
 	if (user_param->use_cuda && user_param->use_cuda_dmabuf) {
 		printf("Calling ibv_reg_dmabuf_mr(offset=%lu, size=%zu, addr=%p, fd=%d) for QP #%d\n",
 			ctx->buf_dmabuf_offset[qp_index], ctx->buff_size, ctx->buf[qp_index],
