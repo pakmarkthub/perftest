@@ -1169,12 +1169,6 @@ int destroy_ctx(struct pingpong_context *ctx,
 		cuMemFree((CUdeviceptr)ctx->ver_val);
 		for (i = 0; i < dereg_counter; i++) {
 			CUdeviceptr d_A = (CUdeviceptr)ctx->buf[i] - user_param->cuda_buffer_offset;
-
-			#ifdef HAVE_CUDA_DMABUF
-			if (user_param->use_cuda_dmabuf)
-				close(ctx->buf_dmabuf_fd[i]);
-			#endif
-
 			printf("deallocating RX GPU buffer %016llx\n", d_A);
 			cuMemFree(d_A);
 			if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
@@ -1583,6 +1577,9 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 				fprintf(stderr, "OFED stack does not support DMA-BUF\n");
 			return FAILURE;
 		}
+		// MPI immediately closes the fd.
+		// We emulate the behavior here.
+		close(ctx->buf_dmabuf_fd[qp_index]);
 	}
 	else
 #endif
