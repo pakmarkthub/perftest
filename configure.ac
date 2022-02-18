@@ -240,10 +240,23 @@ if [test $HAVE_EX_ODP = yes] && [test $HAVE_EX = yes]; then
 fi
 
 if [test "$CUDA_H_PATH" ]; then
+	HAVE_CUDA=yes
 	AC_DEFINE([HAVE_CUDA], [1], [Enable CUDA feature])
 	AC_DEFINE_UNQUOTED([CUDA_PATH], "$CUDA_H_PATH" , [Enable CUDA feature])
-	LIBS=$LIBS" -lcuda"
+	CUDA_LIB_DIR="$(dirname $(dirname $CUDA_H_PATH))"/lib64/
+	# The double dirname is needed because the default location where the CUDA header
+	# is installed is a symlink. If we simply use $CUDA_H_PATH/../../nvcc, that file path
+	# follows the symlink and compilation fails. Instead, we use dirname (which manipulates
+	# the text in the path) twice to get back to the directory where the symlink is housed.
+	NVCC="$(dirname $(dirname $CUDA_H_PATH))"/bin/nvcc
+	AC_SUBST([CUDA_LIB_DIR], ["$CUDA_LIB_DIR"])
+	AC_SUBST([NVCC], ["$NVCC"])
+	AC_SUBST([NVCCFLAGS], ["-Xcompiler -fpermissive"])
+	LIBS=$LIBS" -L$CUDA_LIB_DIR -lstdc++ -lcuda -lcudart"
+else
+	HAVE_CUDA=no
 fi
+AM_CONDITIONAL([HAVE_CUDA], [test "x$HAVE_CUDA" = "xyes"])
 
 AC_TRY_LINK([#include <infiniband/verbs.h>],
 	[struct ibv_qp_attr *attr; int x = attr->rate_limit;],[HAVE_PACKET_PACING=yes], [HAVE_PACKET_PACING=no])

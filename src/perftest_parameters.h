@@ -536,6 +536,8 @@ struct perftest_parameters {
 	uint32_t			reply_every;
 	int				perform_warm_up;
 	int				use_ooo;
+	int				verify;
+	int				trigger_failure;
 	int				vlan_en;
 	uint32_t			vlan_pcp;
 	void 				(*print_eth_func)(void*);
