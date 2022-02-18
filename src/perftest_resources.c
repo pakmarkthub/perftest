@@ -1430,13 +1430,15 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 			const size_t host_page_size = sysconf(_SC_PAGESIZE);
 			int dmabuf_fd;
 			uint64_t offset;
+			size_t aligned_size;
 
 			// Round down to host page size
 			aligned_ptr = d_A & ~(host_page_size - 1);
 			offset = d_A - aligned_ptr;
+			aligned_size = (size + offset + host_page_size - 1) & ~(host_page_size - 1);
 
-			printf("using DMA-BUF for GPU buffer address at %#llx aligned at %#llx with size %zu\n", d_A, aligned_ptr, size);
-			error = cuMemGetHandleForAddressRange((void *)&dmabuf_fd, aligned_ptr, size, CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, 0);
+			printf("using DMA-BUF for GPU buffer address at %#llx aligned at %#llx with aligned size %zu\n", d_A, aligned_ptr, aligned_size);
+			error = cuMemGetHandleForAddressRange((void *)&dmabuf_fd, aligned_ptr, aligned_size, CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, 0);
 			if (error != CUDA_SUCCESS) {
 				printf("cuMemGetHandleForAddressRange error=%d\n", error);
 				return FAILURE;
