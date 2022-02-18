@@ -1390,7 +1390,7 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 	if (user_param->use_cuda) {
 		CUdeviceptr start_d_A, d_A;
 		int error;
-		const size_t gpu_page_size = 2 * 1024 * 1024;
+		const size_t gpu_page_size = 64 * 1024;
 		size_t size = (ctx->buff_size + user_param->cuda_buffer_offset + gpu_page_size - 1) &
 			~(gpu_page_size - 1);
 
