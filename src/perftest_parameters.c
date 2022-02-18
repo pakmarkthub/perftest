@@ -977,6 +977,10 @@ void flow_rules_force_dependecies(struct perftest_parameters *user_param)
 			fprintf(stderr, " Flows is currently designed to work with unidir tests only\n");
 			exit(FAILURE);
 		}
+		if (user_param->verify) {
+			fprintf(stderr, " Multiple flows are not supported with the verify option.\n");
+			exit(FAILURE);
+		}
 	} else {
 		if (user_param->flows_burst  > 1) {
 			fprintf(stderr, " Flows burst is designed to work with more then single flow\n");
@@ -1033,6 +1037,20 @@ static void force_dependecies(struct perftest_parameters *user_param)
 		}
 	}
 
+	if (user_param->verify && user_param->tst == BW) {
+		printf("Disabling cq_mod to prevent unsignalled sends in verification workload.\n");
+		user_param->cq_mod = DISABLED_CQ_MOD_VALUE;
+		if (user_param->trigger_failure) {
+			printf("Failure triggering is only available for latency workloads. Disabling.\n");
+			user_param->trigger_failure = 0;
+		}
+	}
+
+	if (!user_param->verify && user_param->trigger_failure) {
+			printf("Failure triggering is only available for verify workloads. Disabling.\n");
+			user_param->trigger_failure = 0;
+	}
+
 	if (user_param->tst == LAT_BY_BW && user_param->rate_limit_type == DISABLE_RATE_LIMIT) {
 		if (user_param->output == FULL_VERBOSITY)
 			printf("rate_limit type is forced to SW.\n");
@@ -1041,6 +1059,13 @@ static void force_dependecies(struct perftest_parameters *user_param)
 
 	if (user_param->cq_mod > user_param->tx_depth) {
 		user_param->cq_mod = user_param->tx_depth;
+	}
+
+	if ((user_param->verify && user_param->tx_depth > user_param->post_list) || user_param->tx_depth < user_param->post_list) {
+		printf("When verify is enabled, tx_depth must be equal to post_list.\n");
+		printf("tx_depth can never be less than post_list (with or without verify).\n");
+		printf("Setting tx_depth to post_list value: %d\n", user_param->post_list);
+		user_param->tx_depth = user_param->post_list;
 	}
 
 	if (user_param->verb == READ || user_param->verb == ATOMIC)
@@ -2043,11 +2068,13 @@ int parser(struct perftest_parameters *user_param,char *argv[], int argc)
 	static int vlan_en = 0;
 	static int vlan_pcp_flag = 0;
 	static int recv_post_list_flag = 0;
+	static int verify_workload_flag = 0;
+	static int trigger_failure_flag = 0;
+
 	#ifdef HAVE_DCS
 	static int log_dci_streams_flag = 0;
 	static int log_active_dci_streams_flag = 0;
 	#endif
-
 	char *server_ip = NULL;
 	char *client_ip = NULL;
 	char *local_ip = NULL;
@@ -2140,6 +2167,8 @@ int parser(struct perftest_parameters *user_param,char *argv[], int argc)
 			{ .name = "flow_label",		.has_arg = 1, .flag = &flow_label_flag, .val = 1},
 			{ .name = "retry_count",	.has_arg = 1, .flag = &retry_count_flag, .val = 1},
 			{ .name = "dont_xchg_versions",	.has_arg = 0, .flag = &dont_xchg_versions_flag, .val = 1},
+			{ .name = "verify",		.has_arg = 0, .flag = &verify_workload_flag, .val = 1},
+			{ .name = "trigger_failure",	.has_arg = 0, .flag = &trigger_failure_flag, .val = 1},
 			#ifdef HAVE_CUDA
 			{ .name = "use_cuda",		.has_arg = 1, .flag = &use_cuda_flag, .val = 1},
 			{ .name = "use_cuda_bus_id",	.has_arg = 1, .flag = &use_cuda_bus_id_flag, .val = 1},
@@ -2701,6 +2730,14 @@ int parser(struct perftest_parameters *user_param,char *argv[], int argc)
 				else
 					user_param->log_active_dci_streams = user_param->log_dci_streams;
 				#endif
+				if (verify_workload_flag) {
+					user_param->verify = 1;
+					verify_workload_flag = 0;
+				}
+				if (trigger_failure_flag) {
+					user_param->trigger_failure = 1;
+					trigger_failure_flag = 0;
+				}
 				break;
 
 			default:

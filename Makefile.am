@@ -56,6 +56,16 @@ else
 LIBMLX4=
 endif
 
+if HAVE_CUDA
+libperftest_a_SOURCES += src/perftest_resources.cu
+libperftest_a_LIBADD = src/perftest_resources.cu.o src/perftest_resources.cu.lo
+SUFFIXES= .cu
+%.cu.lo: %.cu.o
+	$(NVCC) -dlink -o $@ $< -L$(CUDA_LIB_DIR) -lcudadevrt -lcudart
+%.cu.o: %.cu
+	$(NVCC) -o $@ -c $< $(NVCCFLAGS)
+endif
+
 ib_send_bw_SOURCES = src/send_bw.c src/multicast_resources.c src/multicast_resources.h
 ib_send_bw_LDADD = libperftest.a $(LIBUMAD) $(LIBMATH) $(LIBMLX4) $(LIBMLX5) $(LIBEFA)
 

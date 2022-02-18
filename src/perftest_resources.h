@@ -136,6 +136,9 @@
  * Perftest resources Structures and data types.
  ******************************************************************************/
 
+/* for verification workloads */
+typedef enum {WRITE_STATE, PENDING_READ_SEND, PENDING_READ_COMPLETION} VerificationStates;
+
 /* Represents RDMA CM node with needed information */
 struct cma_node {
 	struct rdma_cm_id *cma_id;
@@ -163,10 +166,16 @@ struct pingpong_context {
 	struct ibv_context			*context;
 	struct ibv_comp_channel			*channel;
 	struct ibv_pd				*pd;
+	struct ibv_mr				**verify_mr;
 	struct ibv_mr				**mr;
 	struct ibv_cq				*send_cq;
 	struct ibv_cq				*recv_cq;
 	void					**buf;
+	void					**ver_buf;
+	void					*buf_key;
+	#ifdef HAVE_CUDA
+	int						*ver_val;
+	#endif
 	struct ibv_ah				**ah;
 	struct ibv_qp				**qp;
 	#ifdef HAVE_IBV_WR_API
@@ -179,11 +188,14 @@ struct pingpong_context {
 	#endif
 	struct ibv_srq				*srq;
 	struct ibv_sge				*sge_list;
+	struct ibv_sge				*verify_sge_list;
 	struct ibv_sge				*recv_sge_list;
 	struct ibv_send_wr			*wr;
+	struct ibv_send_wr			*vwr;
 	struct ibv_recv_wr			*rwr;
 	uint64_t				size;
 	uint64_t				*my_addr;
+	uint64_t				*my_verification_addr;
 	uint64_t				*rx_buffer_addr;
 	uint64_t				*rem_addr;
 	uint32_t 				*rem_qpn;
@@ -192,6 +204,7 @@ struct pingpong_context {
 	uint64_t				flow_buff_size;
 	int					tx_depth;
 	int					huge_shmid;
+	int					ver_huge_shmid;
 	uint64_t				*scnt;
 	uint64_t				*ccnt;
 	int					is_contig_supported;
@@ -207,6 +220,7 @@ struct pingpong_context {
 	int					cache_line_size;
 	int					cycle_buffer;
 	int					rposted;
+	VerificationStates			*vstate;
 	#ifdef HAVE_XRCD
 	struct ibv_xrcd				*xrc_domain;
 	int 					fd;
@@ -784,12 +798,13 @@ int create_mr(struct pingpong_context *ctx,
  *	Creates hugepage memory Regions for the test.
  *
  *	Parameters :
+ *      	user_param - user parameters.
  *      	ctx - Resources sructure.
  *
  * Return Value : SUCCESS, FAILURE.
  *
  */
-int alloc_hugepage_region (struct pingpong_context *ctx, int qp_index);
+int alloc_hugepage_region (struct perftest_parameters *user_param, struct pingpong_context *ctx, int qp_index);
 
 /* run_iter_fs_rate
  *

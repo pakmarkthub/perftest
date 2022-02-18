@@ -34,6 +34,7 @@ static enum ibv_wr_opcode opcode_atomic_array[] = {IBV_WR_ATOMIC_CMP_AND_SWP,IBV
 
 #define CPU_UTILITY "/proc/stat"
 #define DC_KEY 0xffeeddcc
+#define LAT_VER_KEYLEN 16
 
 struct perftest_parameters* duration_param;
 struct check_alive_data check_alive_data;
@@ -656,7 +657,13 @@ static inline int post_send_method(struct pingpong_context *ctx, int index,
 	#endif
 	struct ibv_send_wr 	*bad_wr = NULL;
 	return ibv_post_send(ctx->qp[index], &ctx->wr[index*user_param->post_list], &bad_wr);
+}
 
+static inline int post_send_method_v(struct pingpong_context *ctx, int index, struct perftest_parameters *user_param)
+{
+	/* TODO: support new IBV_WR_API */
+	struct ibv_send_wr 	*bad_wr = NULL;
+	return ibv_post_send(ctx->qp[index], &ctx->vwr[index], &bad_wr);
 }
 
 #ifdef HAVE_XRCD
@@ -989,6 +996,15 @@ void alloc_ctx(struct pingpong_context *ctx,struct perftest_parameters *user_par
 	user_param->buff_size = ctx->buff_size;
 	if (user_param->connection_type == UD)
 		ctx->buff_size += ctx->cache_line_size;
+
+	if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
+		ALLOCATE(ctx->verify_mr, struct ibv_mr*, user_param->num_of_qps);
+		ALLOCATE(ctx->vwr, struct ibv_send_wr, user_param->num_of_qps);
+		ALLOCATE(ctx->verify_sge_list, struct ibv_sge, user_param->num_of_qps);
+		ALLOCATE(ctx->ver_buf, void* , user_param->num_of_qps);
+		ALLOCATE(ctx->my_verification_addr, uint64_t, user_param->num_of_qps);
+		ALLOCATE(ctx->vstate, VerificationStates, user_param->num_of_qps);
+	}
 }
 
 /******************************************************************************
@@ -1108,6 +1124,13 @@ int destroy_ctx(struct pingpong_context *ctx,
 			fprintf(stderr, "Failed to deregister MR #%d\n", i+1);
 			test_result = 1;
 		}
+
+		if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
+			if (ibv_dereg_mr(ctx->verify_mr[i])) {
+				fprintf(stderr, "Failed to deregister MR #%d\n", i+1);
+				test_result = 1;
+			}
+		}
 	}
 
 	if (user_param->verb == SEND && user_param->work_rdma_cm == ON && ctx->send_rcredit) {
@@ -1141,13 +1164,19 @@ int destroy_ctx(struct pingpong_context *ctx,
 
 	#ifdef HAVE_CUDA
 	if (user_param->use_cuda) {
+		cuMemFree((CUdeviceptr)ctx->ver_val);
 		for (i = 0; i < dereg_counter; i++) {
 			CUdeviceptr d_A = (CUdeviceptr)ctx->buf[i];
 
 			printf("deallocating RX GPU buffer %016llx\n", d_A);
 			cuMemFree(d_A);
+			if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
+				d_A = (CUdeviceptr)ctx->ver_buf[i];
+				cuMemFree(d_A);
+			}
 			d_A = 0;
 		}
+		cuMemFree((CUdeviceptr)ctx->buf_key);
 		pp_free_gpu(ctx);
 	}
 	else
@@ -1175,7 +1204,21 @@ int destroy_ctx(struct pingpong_context *ctx,
 				free(ctx->buf[i]);
 			}
 		}
+		if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
+			for (i = 0; i < dereg_counter; i++) {
+				if (user_param->use_hugepages) {
+					shmdt(ctx->ver_buf[i]);
+				} else {
+					free(ctx->ver_buf[i]);
+				}
+			}
+		}
 	}
+	#ifdef HAVE_CUDA
+	if (!user_param->use_cuda) {
+		free(ctx->buf_key);
+	}
+	#endif
 	free(ctx->qp);
 	#ifdef HAVE_IBV_WR_API
 	free(ctx->qpx);
@@ -1211,6 +1254,15 @@ int destroy_ctx(struct pingpong_context *ctx,
 		free(ctx->rx_buffer_addr);
 		free(ctx->recv_sge_list);
 		free(ctx->rwr);
+	}
+
+	if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
+		free(ctx->verify_mr);
+		free(ctx->vwr);
+		free(ctx->verify_sge_list);
+		free(ctx->ver_buf);
+		free(ctx->my_verification_addr);
+		free(ctx->vstate);
 	}
 
 	if (user_param->work_rdma_cm == ON) {
@@ -1306,7 +1358,9 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 {
 	int i;
 	int flags = IBV_ACCESS_LOCAL_WRITE;
-
+	char char_repr_server[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'A', 'B', 'C', 'D', 'E', 'F' };
+	char char_repr_client[] = {'0', 'F', 'E', 'D', 'C', 'B', 'A', '9', '8', '7', '6', '5', '4', '3', '2', '1', '0' };
+	char *char_repr, *char_repr_ver;
 
 	#if defined(__FreeBSD__)
 	ctx->is_contig_supported = FAILURE;
@@ -1346,6 +1400,27 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 		printf("allocated GPU buffer address at %016llx pointer=%p\n",
 		       d_A, (void *)d_A);
 		ctx->buf[qp_index] = (void *)d_A;
+
+		if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
+			printf("cuMemAlloc() of a %zd bytes GPU buffer\n",
+			       ctx->buff_size);
+			error = cuMemAlloc(&d_A, size);
+			if (error != CUDA_SUCCESS) {
+				printf("cuMemAlloc error=%d\n", error);
+				return FAILURE;
+			}
+
+			printf("allocated GPU buffer address at %016llx pointer=%p\n",
+			       d_A, (void *)d_A);
+			ctx->ver_buf[qp_index] = (void *)d_A;
+		}
+
+		error = cuMemAlloc(&d_A, LAT_VER_KEYLEN);
+		if (error != CUDA_SUCCESS) {
+			printf("cuMemAlloc error=%d\n", error);
+			return FAILURE;
+		}
+		ctx->buf_key = (void *)d_A;
 	} else
 	#endif
 
@@ -1382,21 +1457,26 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 			fprintf(stderr, "Couldn't allocate work buf.\n");
 			return FAILURE;
 		}
-
+		ALLOCATE(ctx->buf_key, char, LAT_VER_KEYLEN);
 	} else {
 		/* Allocating buffer for data, in case driver not support contig pages. */
 		if (ctx->is_contig_supported == FAILURE) {
 			#if defined(__FreeBSD__)
 			posix_memalign(&ctx->buf[qp_index], user_param->cycle_buffer, ctx->buff_size);
+			if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
+				posix_memalign(&ctx->ver_buf[qp_index], user_param->cycle_buffer, ctx->buff_size);
+			}
 			#else
 			if (user_param->use_hugepages) {
-				if (alloc_hugepage_region(ctx, qp_index) != SUCCESS){
+				if (alloc_hugepage_region(user_param, ctx, qp_index) != SUCCESS){
 					fprintf(stderr, "Failed to allocate hugepage region.\n");
 					return FAILURE;
 				}
-				memset(ctx->buf[qp_index], 0, ctx->buff_size);
 			} else if  (ctx->is_contig_supported == FAILURE) {
 				ctx->buf[qp_index] = memalign(user_param->cycle_buffer, ctx->buff_size);
+				if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
+					ctx->ver_buf[qp_index] = memalign(user_param->cycle_buffer, ctx->buff_size);
+				}
 			}
 			#endif
 			if (!ctx->buf[qp_index]) {
@@ -1404,15 +1484,22 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 				return FAILURE;
 			}
 
+			if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
+				memset(ctx->ver_buf[qp_index], 0, ctx->buff_size);
+			}
 			memset(ctx->buf[qp_index], 0, ctx->buff_size);
 		} else {
 			ctx->buf[qp_index] = NULL;
 			flags |= (1 << 5);
 		}
+		ALLOCATE(ctx->buf_key, char, LAT_VER_KEYLEN);
 	}
 
 	if (user_param->verb == WRITE) {
 		flags |= IBV_ACCESS_REMOTE_WRITE;
+		if (user_param->verify) {
+			flags |= IBV_ACCESS_REMOTE_READ;
+		}
 	} else if (user_param->verb == READ) {
 		flags |= IBV_ACCESS_REMOTE_READ;
 		if (user_param->transport_type == IBV_TRANSPORT_IWARP)
@@ -1429,7 +1516,6 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 
 	/* Allocating Memory region and assigning our buffer to it. */
 	ctx->mr[qp_index] = ibv_reg_mr(ctx->pd, ctx->buf[qp_index], ctx->buff_size, flags);
-
 	if (!ctx->mr[qp_index]) {
 		fprintf(stderr, "Couldn't allocate MR\n");
 		return FAILURE;
@@ -1438,6 +1524,21 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 	if (ctx->is_contig_supported == SUCCESS)
 		ctx->buf[qp_index] = ctx->mr[qp_index]->addr;
 
+	if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
+		ctx->verify_mr[qp_index] = ibv_reg_mr(ctx->pd, ctx->ver_buf[qp_index], ctx->buff_size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
+		if (!ctx->verify_mr[qp_index]) {
+			fprintf(stderr, "Couldn't allocate verification MR\n");
+			return FAILURE;
+		}
+	}
+
+	if (user_param->machine == SERVER) {
+		char_repr = char_repr_server;
+		char_repr_ver = char_repr_client;
+	} else {
+		char_repr = char_repr_client;
+		char_repr_ver = char_repr_server;
+	}
 
 	/* Initialize buffer with random numbers except in WRITE_LAT test that it 0's */
 #ifdef HAVE_CUDA
@@ -1446,12 +1547,42 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 		srand(time(NULL));
 		if (user_param->verb == WRITE && user_param->tst == LAT) {
 			memset(ctx->buf[qp_index], 0, ctx->buff_size);
+		} else if (user_param->verify && user_param->verb == SEND && user_param->tst == LAT) {
+				for (i = 0; i < ctx->send_qp_buff_size / LAT_VER_KEYLEN; i++) {
+					memcpy(&((char *)ctx->buf[qp_index])[i * LAT_VER_KEYLEN], char_repr_ver, LAT_VER_KEYLEN);
+				}
+				if (ctx->buff_size % LAT_VER_KEYLEN) {
+					memcpy(&((char *)ctx->buf[qp_index])[i * LAT_VER_KEYLEN], char_repr_ver, ctx->buff_size % LAT_VER_KEYLEN);
+				}
+				memcpy(ctx->buf_key, char_repr, LAT_VER_KEYLEN);
 		} else {
 			for (i = 0; i < ctx->buff_size; i++) {
 				((char*)ctx->buf[qp_index])[i] = (char)rand();
 			}
 		}
 #ifdef HAVE_CUDA
+	} else {
+		if (user_param->verify && user_param->verb == SEND && user_param->tst == LAT) {
+			for (i = 0; i < ctx->buff_size / LAT_VER_KEYLEN; i++) {
+				cuMemcpyHtoD((CUdeviceptr)&((char *)ctx->buf[qp_index])[i * LAT_VER_KEYLEN], char_repr_ver, LAT_VER_KEYLEN);
+			}
+			if (ctx->buff_size % LAT_VER_KEYLEN) {
+				cuMemcpyHtoD((CUdeviceptr)&((char *)ctx->buf[qp_index])[i * LAT_VER_KEYLEN], char_repr_ver, ctx->buff_size % LAT_VER_KEYLEN);
+			}
+			cuMemcpyHtoD((CUdeviceptr)ctx->buf_key, char_repr, LAT_VER_KEYLEN);
+		} else {
+			void *scratch_buf = calloc(1, ctx->buff_size);
+			if (!scratch_buf) {
+				fprintf(stderr, "Couldn't allocate scratch buffer.\n");
+				return FAILURE;
+			}
+			srand(time(NULL));
+			for (i = 0; i < ctx->buff_size; i++) {
+				((char *)scratch_buf)[i] = (char)rand();
+			}
+			cuMemcpyHtoD((CUdeviceptr)ctx->buf[qp_index], scratch_buf, ctx->buff_size);
+			free(scratch_buf);
+		}
 	}
 #endif
 	return SUCCESS;
@@ -1482,6 +1613,12 @@ int create_mr(struct pingpong_context *ctx, struct perftest_parameters *user_par
 			memset(ctx->mr[i], 0, sizeof(struct ibv_mr));
 			ctx->mr[i] = ctx->mr[0];
 			ctx->buf[i] = ctx->buf[0] + (i*BUFF_SIZE(ctx->size, ctx->cycle_buffer));
+			if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
+				ALLOCATE(ctx->verify_mr[i], struct ibv_mr, 1);
+				memset(ctx->verify_mr[i], 0, sizeof(struct ibv_mr));
+				ctx->verify_mr[i] = ctx->verify_mr[0];
+				ctx->ver_buf[i] = ctx->ver_buf[0] + (i*BUFF_SIZE(ctx->size, ctx->cycle_buffer));
+			}
 		}
 	}
 
@@ -1496,34 +1633,46 @@ int create_mr(struct pingpong_context *ctx, struct perftest_parameters *user_par
 #define SHMAT_FLAGS (0)
 
 #if !defined(__FreeBSD__)
-int alloc_hugepage_region (struct pingpong_context *ctx, int qp_index)
-{
+int _alloc_hugepage_region(void **buffer_array, struct pingpong_context *ctx, int index) {
 	int buf_size;
+	int huge_shmid;
 	int alignment = (((ctx->cycle_buffer + HUGEPAGE_ALIGN -1) / HUGEPAGE_ALIGN) * HUGEPAGE_ALIGN);
 	buf_size = (((ctx->buff_size + alignment -1 ) / alignment ) * alignment);
 
 	/* create hugepage shared region */
-	ctx->huge_shmid = shmget(IPC_PRIVATE, buf_size,
+	huge_shmid = shmget(IPC_PRIVATE, buf_size,
 				 SHM_HUGETLB | IPC_CREAT | SHM_R | SHM_W);
-	if (ctx->huge_shmid < 0) {
+	if (huge_shmid < 0) {
 		fprintf(stderr, "Failed to allocate hugepages. Please configure hugepages\n");
 		return FAILURE;
 	}
 
 	/* attach shared memory */
-	ctx->buf[qp_index] = (void *) shmat(ctx->huge_shmid, SHMAT_ADDR, SHMAT_FLAGS);
-	if (ctx->buf == (void *) -1) {
+	buffer_array[index] = (void *) shmat(huge_shmid, SHMAT_ADDR, SHMAT_FLAGS);
+	if (buffer_array[index] == (void *) -1) {
 		fprintf(stderr, "Failed to attach shared memory region\n");
 		return FAILURE;
 	}
 
 	/* Mark shmem for removal */
-	if (shmctl(ctx->huge_shmid, IPC_RMID, 0) != 0) {
+	if (shmctl(huge_shmid, IPC_RMID, 0) != 0) {
 		fprintf(stderr, "Failed to mark shm for removal\n");
 		return FAILURE;
 	}
 
 	return SUCCESS;
+}
+
+int alloc_hugepage_region (struct perftest_parameters *user_param, struct pingpong_context *ctx, int qp_index)
+{
+	int rc;
+
+	rc = _alloc_hugepage_region(ctx->buf, ctx, qp_index);
+	if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
+		rc |= _alloc_hugepage_region(ctx->ver_buf, ctx, qp_index);
+	}
+
+	return rc;
 }
 #endif
 
@@ -1642,6 +1791,8 @@ int ctx_init(struct pingpong_context *ctx, struct perftest_parameters *user_para
 	}
 
 	#ifdef HAVE_CUDA
+	CUdeviceptr d_A;
+	int local_ver_val = 0;
 	if (user_param->use_cuda) {
 		if (user_param->cuda_device_bus_id) {
 			int err;
@@ -1664,6 +1815,12 @@ int ctx_init(struct pingpong_context *ctx, struct perftest_parameters *user_para
 			fprintf(stderr, "Couldn't init GPU context\n");
 			return FAILURE;
 		}
+		if (cuMemAlloc(&d_A, sizeof(int)) != CUDA_SUCCESS) {
+			fprintf(stderr, "Couldn't allocate GPU memory.\n");
+			return FAILURE;
+		}
+		ctx->ver_val = (int *)d_A;
+		CUCHECK(cuMemcpyHtoD((CUdeviceptr)ctx->ver_val, &local_ver_val, sizeof(int)));
 	}
 	#endif
 
@@ -2073,6 +2230,9 @@ int ctx_modify_qp_to_init(struct ibv_qp *qp,struct perftest_parameters *user_par
 			case SEND  : attr.qp_access_flags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_LOCAL_WRITE;
 		}
 		flags |= IBV_QP_ACCESS_FLAGS;
+		if (user_param->verify) {
+			attr.qp_access_flags |= IBV_ACCESS_REMOTE_READ;
+		}
 	}
 	ret = ibv_modify_qp(qp, &attr, flags);
 
@@ -2193,6 +2353,7 @@ static int ctx_modify_qp_to_rts(struct ibv_qp *qp,
 	struct ibv_qp_attr *attr = (struct ibv_qp_attr*)_attr;
 
 	attr->qp_state = IBV_QPS_RTS;
+
 
 	if (user_param->connection_type != RawEth) {
 
@@ -2559,6 +2720,28 @@ void ctx_set_send_reg_wqes(struct pingpong_context *ctx,
 				ctx->rem_addr[i] = rem_dest[xrc_offset + i].vaddr;
 		}
 
+		if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
+			ctx->my_verification_addr[i] = (uintptr_t)ctx->ver_buf[i];
+			ctx->vwr[i].opcode = IBV_WR_RDMA_READ;
+			/* cycle_buffer is the allocated size of the data buffer. It defaults to a minimum of the system page size (4k).
+			 * There is a preexisting optimization on the write-side that points each send_wr remote_address to a diffent offset
+			 * in the buffer if cycle_buffer is >= 2x user_patam->size. On the verification side, we take advantage of this
+			 * optimization to facilitate reading back only once for multiple write operations, especially for small (<4K) data
+			 * transfer sizes. */
+			ctx->verify_sge_list[i].length = user_param->size > ctx->cycle_buffer / 2 ? user_param->size : ctx->cycle_buffer;
+			ctx->verify_sge_list[i].lkey = ctx->verify_mr[i]->lkey;
+			ctx->verify_sge_list[i].addr = ctx->my_verification_addr[i];
+			ctx->vwr[i].sg_list = &ctx->verify_sge_list[i];
+			ctx->vwr[i].num_sge = 1;
+			/* distinguish from the WRs associated with the write workload. */
+			ctx->vwr[i].wr_id = i + num_of_qps;
+			ctx->vwr[i].send_flags = IBV_SEND_SIGNALED;
+			ctx->vwr[i].next = NULL;
+
+			ctx->vwr[i].wr.rdma.remote_addr = rem_dest[xrc_offset + i].vaddr;
+			ctx->vwr[i].wr.rdma.rkey = rem_dest[xrc_offset + i].rkey;
+		}
+
 		for (j = 0; j < user_param->post_list; j++) {
 
 			ctx->sge_list[i*user_param->post_list + j].length =
@@ -2907,6 +3090,54 @@ cleaning:
 	return return_value;
 }
 
+/* This code executes asynchronously. It must be followed by a call that synchronizes the GPU and CPU like a cudaMemcpy. */
+#ifdef HAVE_CUDA
+extern void start_bufcmp_gpu_async(char *buf, size_t buf_size, char *cmp, size_t cmp_len, int *result, int is_lat);
+#endif
+
+static int verify_buffer(struct perftest_parameters *user_param, struct pingpong_context *ctx, int index)
+{
+	int i, j;
+	uint64_t verification_length;
+
+	/* cycle_buffer is the allocated size of the data buffer. It defaults to a minimum of the system page size (4k).
+	 * There is a preexisting optimization on the write-side that points each send_wr remote_address to a diffent offset
+	 * in the buffer if cycle_buffer is >= 2x user_patam->size. On the verification side, we take advantage of this
+	 * optimization to facilitate reading back only once for multiple write operations, especially for small (<4K) data
+	 * transfer sizes. */
+	verification_length = ctx->cycle_buffer / 2 >= user_param->size ? user_param->size * user_param->post_list : user_param->size;
+
+	if (user_param->size < ctx->cache_line_size) {
+		verification_length = user_param->size;
+	}
+	#ifdef HAVE_CUDA
+	int verification_value = 0;
+	if (user_param->use_cuda) {
+		start_bufcmp_gpu_async((char *)ctx->buf[index], verification_length, (char *)ctx->ver_buf[index], verification_length, ctx->ver_val, 0);
+		CUCHECK(cuMemcpyDtoH(&verification_value, (CUdeviceptr)ctx->ver_val, sizeof(int)));
+		if (verification_value) {
+			return -1;
+		}
+	} else {
+	#endif
+	if (memcmp(ctx->buf[index], ctx->ver_buf[index], verification_length)) {
+		return -1;
+	}
+
+	/* poison 8 bytes every 64k. 64K is the GPU BAR1 mapping granularity. */
+	for(i = 0; i < verification_length; i+=65536) {
+		for  (j = 0; j < 8 && j + i < verification_length; j++) {
+			((char *)ctx->buf[index])[i + j] = (char)rand();
+		}
+	}
+
+#ifdef HAVE_CUDA
+	}
+#endif
+
+	return 0;
+}
+
 /******************************************************************************
  *
  ******************************************************************************/
@@ -2935,6 +3166,12 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 	uintptr_t		primary_send_addr = ctx->sge_list[0].addr;
 	int			address_offset = 0;
 	int			flows_burst_iter = 0;
+
+	if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
+		for(i =0; i < user_param->num_of_qps; i++) {
+			ctx->vstate[i] = WRITE_STATE;
+		}
+	}
 
 	#ifdef HAVE_IBV_WR_API
 	if (user_param->connection_type != RawEth)
@@ -3012,6 +3249,22 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 				is_sending_burst = 1;
 				burst_iter = 0;
 			}
+
+			if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
+				if (ctx->vstate[index] == PENDING_READ_SEND) {
+					err = post_send_method_v(ctx, index, user_param);
+					if (err) {
+						return_value = FAILURE;
+						goto cleaning;
+					}
+					ctx->vstate[index] = PENDING_READ_COMPLETION;
+				}
+
+				if (ctx->vstate[index] == PENDING_READ_COMPLETION) {
+					/* wait until we process completions. */
+					break;
+				}
+			}
 			while ((ctx->scnt[index] < user_param->iters || user_param->test_type == DURATION) &&
 					(ctx->scnt[index] - ctx->ccnt[index] + user_param->post_list) <= (user_param->tx_depth) &&
 					!((user_param->rate_limit_type == SW_RATE_LIMIT ) && is_sending_burst == 0)) {
@@ -3053,7 +3306,7 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 				}
 
 				/* in multiple flow scenarios we will go to next cycle buffer address in the main buffer*/
-				if (user_param->post_list == 1 && user_param->size <= (ctx->cycle_buffer / 2)) {
+				if (!user_param->verify && user_param->post_list == 1 && user_param->size <= (ctx->cycle_buffer / 2)) {
 						increase_loc_addr(ctx->wr[index].sg_list,user_param->size, ctx->scnt[index],
 								ctx->my_addr[index] + address_offset , 0, ctx->cache_line_size,
 								ctx->cycle_buffer);
@@ -3084,7 +3337,7 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 				}
 			}
 		}
-		if (totccnt < tot_iters || (user_param->test_type == DURATION &&  totccnt < totscnt)) {
+		if (totccnt < tot_iters || (user_param->test_type == DURATION &&  totccnt < totscnt) || user_param->verify) {
 				if (user_param->use_event) {
 					if (ctx_notify_events(ctx->channel)) {
 						fprintf(stderr, "Couldn't request CQ notification\n");
@@ -3101,6 +3354,21 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 							NOTIFY_COMP_ERROR_SEND(wc[i],totscnt,totccnt);
 							return_value = FAILURE;
 							goto cleaning;
+						}
+						if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
+							if (wc_id >= user_param->num_of_qps) {
+								/* This means that we just got back a verification completion. */
+								if (verify_buffer(user_param, ctx, wc_id - user_param->num_of_qps) != 0) {
+									fprintf(stderr, "Buffer verification failure.\n");
+									return_value = FAILURE;
+									goto cleaning;
+								}
+								ctx->vstate[wc_id - user_param->num_of_qps] = WRITE_STATE;
+								continue;
+							}
+							else {
+								ctx->vstate[wc_id] = PENDING_READ_SEND;
+							}
 						}
 
 						ctx->ccnt[wc_id] += user_param->cq_mod;
@@ -4149,6 +4417,65 @@ int run_iter_lat(struct pingpong_context *ctx,struct perftest_parameters *user_p
 	return 0;
 }
 
+static int
+verify_send_buffer(struct perftest_parameters *user_param, struct pingpong_context *ctx, int index)
+{
+	uint64_t i, j, current_value;
+	
+#ifdef HAVE_CUDA
+	int verification_value = 0;
+	if (user_param->use_cuda) {
+		start_bufcmp_gpu_async((char *)&((char *)ctx->buf[index])[ctx->send_qp_buff_size], user_param->size, (char *)ctx->buf_key, LAT_VER_KEYLEN, ctx->ver_val, 1);
+		cuMemcpyDtoH(&verification_value, (CUdeviceptr)ctx->ver_val, sizeof(int));
+		if (verification_value) {
+			return -1;
+		}
+	} else {
+#endif
+
+	for (i = 0; i < user_param->size / LAT_VER_KEYLEN; i++) {
+		current_value = ctx->send_qp_buff_size + i * LAT_VER_KEYLEN;
+		if (memcmp(&((char *)ctx->buf[index])[current_value], ctx->buf_key, LAT_VER_KEYLEN)) {
+			return 1;
+		}
+
+		/* poison the buffer. */
+		if ((i * LAT_VER_KEYLEN) % 65536 == 0) {
+			for  (j = 0; j < 8 && j + i < ctx->size; j++) {
+				((char *)ctx->buf[index])[current_value + j] = (char)rand();
+			}
+		}
+	}
+	/* Catch final piece of buffer. */
+	current_value = ctx->send_qp_buff_size + i * LAT_VER_KEYLEN;
+	if (user_param->size % LAT_VER_KEYLEN && memcmp(&((char *)ctx->buf[index])[current_value], ctx->buf_key, ctx->size % LAT_VER_KEYLEN)) {
+		return 1;
+	}
+
+#ifdef HAVE_CUDA
+	}
+#endif
+
+	return 0;
+}
+
+static void
+trigger_false_positive(struct perftest_parameters *user_param, struct pingpong_context *ctx, int index)
+{
+	char bogus_buffer_value[] = {'D', 'E', 'D', 'E', 'D', 'E', 'D', 'E', 'D', 'E', 'D', 'E', 'D', 'E', 'D', 'E'};
+
+	/* Just fill the first 16 bytes. That will be plenty to trigger the false positive. */
+#ifdef HAVE_CUDA
+	if (user_param->use_cuda) {
+		cuMemcpyHtoD((CUdeviceptr)ctx->buf[index], bogus_buffer_value, LAT_VER_KEYLEN);
+	} else {
+#endif
+	memcpy(ctx->buf[index], bogus_buffer_value, LAT_VER_KEYLEN);
+#ifdef HAVE_CUDA
+	}
+#endif
+}
+
 /******************************************************************************
  *
  ******************************************************************************/
@@ -4221,6 +4548,10 @@ int run_iter_lat_send(struct pingpong_context *ctx,struct perftest_parameters *u
 					if (user_param->test_type == DURATION && user_param->state == SAMPLE_STATE)
 						user_param->iters++;
 
+					if (user_param->verify && verify_send_buffer(user_param, ctx, wc.wr_id)) {
+						fprintf(stderr, "Buffer Verification failed!\n");
+						return 1;
+					}
 					/*if we're in duration mode or there
 					 * is enough space in the rx_depth,
 					 * post that you received a packet.
@@ -4268,6 +4599,10 @@ int run_iter_lat_send(struct pingpong_context *ctx,struct perftest_parameters *u
 				user_param->tposted[scnt] = get_cycles();
 
 			scnt++;
+
+			if (user_param->trigger_failure && scnt == user_param->iters / 2) {
+				trigger_false_positive(user_param, ctx, 0);
+			}
 
 			if (scnt % user_param->cq_mod == 0 || (user_param->test_type == ITERATIONS && scnt == user_param->iters)) {
 				poll = 1;
