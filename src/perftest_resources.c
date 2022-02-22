@@ -1404,26 +1404,6 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 		       start_d_A, d_A);
 
 		ctx->buf[qp_index] = (void *)d_A;
-		if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
-			printf("cuMemAlloc() of a %zd bytes GPU buffer\n",
-			       ctx->buff_size);
-			error = cuMemAlloc(&d_A, size);
-			if (error != CUDA_SUCCESS) {
-				printf("cuMemAlloc error=%d\n", error);
-				return FAILURE;
-			}
-
-			printf("allocated GPU buffer address at %016llx pointer=%p\n",
-			       d_A, (void *)d_A);
-			ctx->ver_buf[qp_index] = (void *)d_A;
-		}
-
-		error = cuMemAlloc(&d_A, LAT_VER_KEYLEN);
-		if (error != CUDA_SUCCESS) {
-			printf("cuMemAlloc error=%d\n", error);
-			return FAILURE;
-		}
-		ctx->buf_key = (void *)d_A;
 		#ifdef HAVE_CUDA_DMABUF
 		if (user_param->use_cuda_dmabuf) {
 			CUdeviceptr aligned_ptr;
@@ -1450,7 +1430,7 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 		#endif
 
 		if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
-			printf("cuMemAlloc() of a %zd bytes GPU buffer\n",
+			printf("cuMemAlloc() of a %zd bytes GPU buffer for data verification buffer\n",
 			       ctx->buff_size);
 			error = cuMemAlloc(&d_A, size);
 			if (error != CUDA_SUCCESS) {
@@ -1458,11 +1438,13 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 				return FAILURE;
 			}
 
-			printf("allocated GPU verification buffer address at %#llx\n",
-			       d_A);
+			printf("allocated GPU buffer address at %016llx pointer=%p\n",
+			       d_A, (void *)d_A);
 			ctx->ver_buf[qp_index] = (void *)d_A;
 		}
 
+		printf("cuMemAlloc() of a %d bytes GPU buffer for verification buffer key\n",
+				LAT_VER_KEYLEN);
 		error = cuMemAlloc(&d_A, LAT_VER_KEYLEN);
 		if (error != CUDA_SUCCESS) {
 			printf("cuMemAlloc error=%d\n", error);
