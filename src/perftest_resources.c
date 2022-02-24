@@ -1579,6 +1579,8 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 		ctx->buf[qp_index] = ctx->mr[qp_index]->addr;
 
 	if (user_param->verb == WRITE && user_param->verify && user_param->machine == CLIENT) {
+		// BUG: On inbox driver, ibv_reg_mr will fail if ver_buf is CUDA memory.
+		// TODO: Change registration to use ibv_reg_dmabuf_mr.
 		ctx->verify_mr[qp_index] = ibv_reg_mr(ctx->pd, ctx->ver_buf[qp_index], ctx->buff_size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
 		if (!ctx->verify_mr[qp_index]) {
 			fprintf(stderr, "Couldn't allocate verification MR\n");
