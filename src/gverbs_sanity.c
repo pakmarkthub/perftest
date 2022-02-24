@@ -77,11 +77,11 @@ static CUresult gpu_mem_free(struct gpu_mem_handle *handle)
 	return ret;
 }
 
-#define NVIDIA_DRVIER_VERSION_MAX_LENGTH 80
+#define NVIDIA_DRIVER_VERSION_MAX_LENGTH 80
 static int get_nvidia_driver_version(int *major_version)
 {
 	static int cached_version = -1;
-	char version_string[NVIDIA_DRVIER_VERSION_MAX_LENGTH];
+	char version_string[NVIDIA_DRIVER_VERSION_MAX_LENGTH];
 	char c;
 	int i;
 
@@ -91,12 +91,12 @@ static int get_nvidia_driver_version(int *major_version)
 			return FAILURE;
 		}
 
-		if (nvmlSystemGetDriverVersion(version_string, NVIDIA_DRVIER_VERSION_MAX_LENGTH) != NVML_SUCCESS) {
+		if (nvmlSystemGetDriverVersion(version_string, NVIDIA_DRIVER_VERSION_MAX_LENGTH) != NVML_SUCCESS) {
 			fprintf(stderr, " Failed to get the nvidia driver version string\n");
 			return FAILURE;
 		}
 
-		for (i = 0; i < NVIDIA_DRVIER_VERSION_MAX_LENGTH; ++i) {
+		for (i = 0; i < NVIDIA_DRIVER_VERSION_MAX_LENGTH; ++i) {
 			c = version_string[i];
 			if (c < '0' || c > '9') {
 				version_string[i] = '\0';
