@@ -326,6 +326,7 @@ int main(int argc, char *argv[])
 		err = cuDeviceGetByPCIBusId(&user_param.cuda_device_id, user_param.cuda_device_bus_id);
 		if (err != 0) {
 			fprintf(stderr, "We have an error from cuDeviceGetByPCIBusId: %d\n", err);
+			return FAILURE;
 		}
 		printf("Picking GPU number %d\n", user_param.cuda_device_id);
 	}
