@@ -1869,6 +1869,16 @@ int ctx_init(struct pingpong_context *ctx, struct perftest_parameters *user_para
 			fprintf(stderr, "Couldn't init GPU context\n");
 			return FAILURE;
 		}
+		#ifdef HAVE_CUDA_DMABUF
+		if (user_param->use_cuda_dmabuf) {
+			int is_supported = 0;
+			CUCHECK(cuDeviceGetAttribute(&is_supported, CU_DEVICE_ATTRIBUTE_DMA_BUF_SUPPORTED, cuDevice));
+			if (!is_supported) {
+				printf("DMA-BUF is not supported on this GPU\n");
+				return FAILURE;
+			}
+		}
+		#endif
 		if (cuMemAlloc(&d_A, sizeof(int)) != CUDA_SUCCESS) {
 			fprintf(stderr, "Couldn't allocate GPU memory.\n");
 			return FAILURE;
