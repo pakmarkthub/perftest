@@ -936,8 +936,12 @@ void alloc_ctx(struct pingpong_context *ctx,struct perftest_parameters *user_par
 	#endif
 	ALLOCATE(ctx->mr, struct ibv_mr*, user_param->num_of_qps);
 	ALLOCATE(ctx->buf, void*, user_param->num_of_qps);
-	ALLOCATE(ctx->buf_dmabuf_fd, int, user_param->num_of_qps);
-	ALLOCATE(ctx->buf_dmabuf_offset, uint64_t, user_param->num_of_qps);
+	#ifdef HAVE_CUDA_DMABUF
+	if (user_param->use_cuda_dmabuf) {
+		ALLOCATE(ctx->cuda_buf_dmabuf_fd, int, user_param->num_of_qps);
+		ALLOCATE(ctx->cuda_buf_dmabuf_offset, uint64_t, user_param->num_of_qps);
+	}
+	#endif
 
 	if ((user_param->tst == BW || user_param->tst == LAT_BY_BW) && (user_param->machine == CLIENT || user_param->duplex)) {
 
@@ -1424,8 +1428,8 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 				return FAILURE;
 			}
 
-			ctx->buf_dmabuf_fd[qp_index] = dmabuf_fd;
-			ctx->buf_dmabuf_offset[qp_index] = offset;
+			ctx->cuda_buf_dmabuf_fd[qp_index] = dmabuf_fd;
+			ctx->cuda_buf_dmabuf_offset[qp_index] = offset;
 		}
 		#endif
 
@@ -1548,11 +1552,11 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 #ifdef HAVE_CUDA_DMABUF
 	if (user_param->use_cuda && user_param->use_cuda_dmabuf) {
 		printf("Calling ibv_reg_dmabuf_mr(offset=%lu, size=%zu, addr=%p, fd=%d) for QP #%d\n",
-			ctx->buf_dmabuf_offset[qp_index], ctx->buff_size, ctx->buf[qp_index],
-			ctx->buf_dmabuf_fd[qp_index], qp_index);
+			ctx->cuda_buf_dmabuf_offset[qp_index], ctx->buff_size, ctx->buf[qp_index],
+			ctx->cuda_buf_dmabuf_fd[qp_index], qp_index);
 		ctx->mr[qp_index] = ibv_reg_dmabuf_mr(
-			ctx->pd, ctx->buf_dmabuf_offset[qp_index], ctx->buff_size, (uint64_t)ctx->buf[qp_index], 
-			ctx->buf_dmabuf_fd[qp_index], flags
+			ctx->pd, ctx->cuda_buf_dmabuf_offset[qp_index], ctx->buff_size, (uint64_t)ctx->buf[qp_index], 
+			ctx->cuda_buf_dmabuf_fd[qp_index], flags
 		);
 		if (!ctx->mr[qp_index]) {
 			int error = errno;
@@ -1563,7 +1567,7 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 		}
 		// MPI immediately closes the fd.
 		// We emulate the behavior here.
-		close(ctx->buf_dmabuf_fd[qp_index]);
+		close(ctx->cuda_buf_dmabuf_fd[qp_index]);
 	}
 	else
 #endif
