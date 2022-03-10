@@ -117,7 +117,7 @@ static int get_nvidia_driver_version(int *major_version)
 static int get_peer_mapping_override_status(int *status)
 {
 	int ret = 0;
-	int cached_status = -1;
+	static int cached_status = -1;
 	FILE *f = NULL;
 	char *line = NULL;
 	size_t line_length;
