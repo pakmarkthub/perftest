@@ -896,5 +896,8 @@ int rdma_cm_destroy_cma(struct pingpong_context *ctx,
 int error_handler(char *error_message);
 
 void force_invalidation(struct pingpong_context *ctx, struct perftest_parameters *user_param);
+#ifdef HAVE_CUDA
+int pp_init_gpu(struct pingpong_context *ctx, int cuda_device_id);
+#endif
 
 #endif /* PERFTEST_RESOURCES_H */

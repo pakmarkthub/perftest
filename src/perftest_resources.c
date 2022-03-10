@@ -78,7 +78,7 @@ void force_invalidation(struct pingpong_context *ctx, struct perftest_parameters
 #endif
 }
 
-static int pp_init_gpu(struct pingpong_context *ctx, int cuda_device_id)
+int pp_init_gpu(struct pingpong_context *ctx, int cuda_device_id)
 {
 	int cuda_pci_bus_id;
 	int cuda_pci_device_id;
