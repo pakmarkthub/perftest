@@ -175,6 +175,10 @@ struct pingpong_context {
 	void					*buf_key;
 	#ifdef HAVE_CUDA
 	int						*ver_val;
+	#ifdef HAVE_CUDA_DMABUF
+	int					*cuda_buf_dmabuf_fd;
+	uint64_t				*cuda_buf_dmabuf_offset;
+	#endif
 	#endif
 	struct ibv_ah				**ah;
 	struct ibv_qp				**qp;

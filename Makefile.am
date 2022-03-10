@@ -61,7 +61,7 @@ libperftest_a_SOURCES += src/perftest_resources.cu
 libperftest_a_LIBADD = src/perftest_resources.cu.o src/perftest_resources.cu.lo
 SUFFIXES= .cu
 %.cu.lo: %.cu.o
-	$(NVCC) -dlink -o $@ $< -L$(CUDA_LIB_DIR) -lcudadevrt -lcudart
+	$(NVCC) -dlink -o $@ $< -lcudadevrt -lcudart
 %.cu.o: %.cu
 	$(NVCC) -o $@ -c $< $(NVCCFLAGS)
 endif

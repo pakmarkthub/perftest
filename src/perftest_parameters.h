@@ -475,6 +475,10 @@ struct perftest_parameters {
 	int				raw_qos;
 #ifdef HAVE_CUDA
 	int				use_cuda;
+#ifdef HAVE_CUDA_DMABUF
+	int				use_cuda_dmabuf;
+#endif
+	uint64_t			cuda_buffer_offset;
 	int				cuda_device_id;
 	char				*cuda_device_bus_id;
 	int				cuda_force_invalidation;

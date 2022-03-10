@@ -244,16 +244,15 @@ if [test "$CUDA_H_PATH" ]; then
 	HAVE_CUDA=yes
 	AC_DEFINE([HAVE_CUDA], [1], [Enable CUDA feature])
 	AC_DEFINE_UNQUOTED([CUDA_PATH], "$CUDA_H_PATH" , [Enable CUDA feature])
-	CUDA_LIB_DIR="$(dirname $(dirname $CUDA_H_PATH))"/lib64/
-	# The double dirname is needed because the default location where the CUDA header
-	# is installed is a symlink. If we simply use $CUDA_H_PATH/../../nvcc, that file path
-	# follows the symlink and compilation fails. Instead, we use dirname (which manipulates
-	# the text in the path) twice to get back to the directory where the symlink is housed.
-	NVCC="$(dirname $(dirname $CUDA_H_PATH))"/bin/nvcc
-	AC_SUBST([CUDA_LIB_DIR], ["$CUDA_LIB_DIR"])
-	AC_SUBST([NVCC], ["$NVCC"])
 	AC_SUBST([NVCCFLAGS], ["-Xcompiler -fpermissive"])
-	LIBS=$LIBS" -L$CUDA_LIB_DIR -lstdc++ -lcuda -lcudart"
+	AC_SUBST([NVCC], ["nvcc"])
+	LIBS=$LIBS" -lstdc++ -lcuda -lcudart"
+
+    AC_CHECK_LIB([ibverbs], [ibv_reg_dmabuf_mr], [HAVE_REG_DMABUF_MR=yes], [HAVE_REG_DMABUF_MR=no])
+    AC_CHECK_LIB([cuda], [cuMemGetHandleForAddressRange], [HAVE_CUDA_CUMEMGETHANDLEFORADDRESSRANGE=yes], [HAVE_CUDA_CUMEMGETHANDLEFORADDRESSRANGE=no])
+    if [test "x$HAVE_REG_DMABUF_MR" = "xyes"] && [test "x$HAVE_CUDA_CUMEMGETHANDLEFORADDRESSRANGE" = "xyes"]; then
+        AC_DEFINE([HAVE_CUDA_DMABUF], [1], [Enable CUDA DMABUF feature])
+    fi
 else
 	HAVE_CUDA=no
 fi
