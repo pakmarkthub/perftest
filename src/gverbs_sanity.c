@@ -113,14 +113,13 @@ static int get_nvidia_driver_version(int *major_version)
 }
 
 #define NVIDIA_DRIVER_PARAMS_FILE_PATH "/proc/driver/nvidia/params"
-#define NVIDIA_DRIVER_PARAMS_LINE_INITIAL_LENGTH 100
 static int get_peer_mapping_override_status(int *status)
 {
 	int ret = 0;
 	static int cached_status = -1;
 	FILE *f = NULL;
 	char *line = NULL;
-	size_t line_length;
+	size_t line_length = 0;
 	int cont;
 
 	if (cached_status < 0) {
@@ -131,16 +130,7 @@ static int get_peer_mapping_override_status(int *status)
 			goto out;
 		}
 
-		line_length = NVIDIA_DRIVER_PARAMS_LINE_INITIAL_LENGTH;
-		line = malloc(sizeof(char) * line_length);
-		if (!line) {
-			ret = FAILURE;
-			fprintf(stderr, " Failed to malloc memory\n");
-			goto out;
-		}
-
 		do {
-			line_length = (line_length > NVIDIA_DRIVER_PARAMS_LINE_INITIAL_LENGTH) ? line_length : NVIDIA_DRIVER_PARAMS_LINE_INITIAL_LENGTH;
 			cont = (getline(&line, &line_length, f) >= 0);
 			if (strstr(line, "PeerMappingOverride=1")) {
 				cached_status = 1;
