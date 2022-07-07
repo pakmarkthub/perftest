@@ -92,9 +92,11 @@ ib_atomic_bw_LDADD = libperftest.a $(LIBMATH) $(LIBMLX4) $(LIBMLX5) $(LIBEFA)
 
 if HAVE_CUDA
 if HAVE_NVML
+if HAVE_MLX5DV
 bin_PROGRAMS += gverbs_sanity
 gverbs_sanity_SOURCES = src/gverbs_sanity.c
 gverbs_sanity_LDADD = libperftest.a $(LIBMATH) $(LIBMLX4) $(LIBMLX5) $(LIBEFA)
+endif
 endif
 endif
 
